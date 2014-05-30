@@ -1,0 +1,16 @@
+#!/bin/bash
+if [ "$(id -u)" != "0" ]; then
+   echo "This script must be run as root" 1>&2
+   exit 1
+fi
+
+wget -O - http://ubuntu.doubtech.com/doubtech-debian.pub | apt-key add -
+
+if [ -z "`grep ubuntu.doubtech.com /etc/apt/sources.list`" ]; then
+    echo "" >> /etc/apt/sources.list.d/ubuntumobi.list
+    echo "# Ubuntu Mobi Sources" >> /etc/apt/sources.list.d/ubuntumobi.list
+    echo "deb http://ubuntu.doubtech.com/dists/ubuntumobi/ /" >> /etc/apt/sources.list.d/ubuntumobi.list
+fi
+
+apt-get update
+apt-get install openssh-server ubuntu-mobidev unity-tweak-tool ubuntu-mobidev-theme 

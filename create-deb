@@ -1,0 +1,166 @@
+#!/bin/bash
+
+function build {
+    if [ -n "$1" ]; then
+        cd $1
+    fi
+
+    if [ -z "$2" ]; then
+        if [ -f "VERSION" ]; then
+            version=`cat VERSION`-`date +%Y%m%d%H%m`
+        elif [ -f "AUTOVERSION" ]; then
+            version=`date +%Y%m%d%H%m`
+            echo $version > AUTOVERSION
+        else
+            echo "Usage `basename $0` build path version"
+            exit 0
+        fi
+    else
+        version=$1
+    fi
+
+    if [ ! -d DEBIAN ] || [ ! -f file.list ]; then
+        echo "Missing DEBIAN and/or file.list." >&2
+        exit 0
+    fi
+
+    package=`grep Package DEBIAN/control | sed "s/^Package: //"`
+    arch=`grep Architecture DEBIAN/control | sed "s/^Architecture: //"`
+
+    wd="${package}_${version}_${arch}"
+
+    echo "Building debian package for $package v$version..." >&2
+
+    mkdir $wd
+
+    echo -n "  creating directory structure..."
+    cat file.list | xargs -i dirname "{}" | xargs -i mkdir -p $wd/{}
+    echo "done."
+
+    echo -n "  copying files..."
+    cat file.list | xargs -i cp -r {} $wd/{}
+
+
+    if [ -f 'local-file.list' ]; then
+        while read line
+        do
+            source=`echo $line | awk '{print $1}'`
+            target=`echo $line | awk '{print $2}'`
+            mkdir -p `dirname $wd/$target`
+            cp $source $wd/$target
+        done < local-file.list
+    fi
+
+    echo "done."
+
+    if [ -f "exclude.list" ]; then
+        echo -n "  removing excluded files..."
+        cat exclude.list | xargs -i rm -rf $wd/{}
+        echo "done."
+    fi
+
+    pushd $wd >/dev/null
+    if [ -n "`find . -type f | grep -v '^[.]/DEBIAN/'`" ]; then
+        echo -n "  creating md5sum..."
+        find . -type f | grep -v '^[.]/DEBIAN/' | xargs -i md5sum "{}" >> ../md5sum
+        echo "done."
+    fi
+
+    echo -n "  preparing deb components..."
+    cp -r ../DEBIAN ./
+    if [ -f ../md5sum ]; then
+        mv ../md5sum DEBIAN/
+    fi
+    size=`du | tail -1 | awk '{print $1}'`
+    sed -i "s/\$SIZE/$size/g" DEBIAN/control
+    sed -i "s/\$VERSION/$version/g" DEBIAN/control
+    chmod +x DEBIAN/postinst 2>/dev/null
+    chmod +x DEBIAN/preinst 2>/dev/null
+    chmod +x DEBIAN/prerm 2>/dev/null
+    chmod +x DEBIAN/postrm 2>/dev/null
+    echo "done."
+    cd ..
+    echo -n "  "
+    dpkg-deb -b $wd .
+    popd >/dev/null
+    echo "Done! You may submit this package by typing '`basename $0` submit'"
+    rm -rf $wd
+}
+
+function refresh-repo {
+    if [ -z "$1" ] || [ -z "$2" ]; then
+        echo "Usage `basename $0` refresh-repo /path/to/repo.header /path/to/repo /path/to/.gpg"
+        echo "  Example repo header:
+        Archive: ubuntumobi
+        Origin: Doubling Technologies
+        Label: Ubuntu MobiDev software repository
+        Architecture: amd64
+        MD5Sum:"
+        exit 0
+    fi
+    echo -n "Indexing repository.."
+    cat $1 > $2/Release
+    cd $2
+    dpkg-scanpackages . /dev/null > Packages
+    gzip -9c Packages > Packages.gz
+    echo "done"
+   
+    echo -n "Signing..."
+printf ' '$(md5sum Packages | cut --delimiter=' ' --fields=1)' %16d Packages\n' \
+   $(wc --bytes Packages | cut --delimiter=' ' --fields=1) >> Release
+printf ' '$(md5sum Packages.gz | cut --delimiter=' ' --fields=1)' %16d Packages.gz' \
+   $(wc --bytes Packages.gz | cut --delimiter=' ' --fields=1) >> Release
+    echo "done."
+
+    gpgpath=".gpg"
+    if [ -n "$3" ]; then
+        gpgpath="$3"
+    fi
+    gpg --homedir $gpgpath --armor --detach-sign --output Release.gpg Release
+}
+
+function submit {
+    if [ -z "$1" ]; then
+        echo "Usage `basename $0` install version target_path (path)"
+    fi
+
+    if [ -n "$3" ]; then
+        cd $3
+    fi
+
+    if [ ! -d DEBIAN ] || [ ! -f file.list ]; then
+        echo "Missing DEBIAN and/or file.list." >&2
+        exit 0
+    fi
+
+    package=`grep Package DEBIAN/control | sed "s/^Package: //"`
+    arch=`grep Architecture DEBIAN/control | sed "s/^Architecture: //"`
+    version=$1
+
+    wd="${package}_${version}_${arch}.deb"
+    cp $wd $2
+    refresh-repo $2
+}
+
+function install {
+    submit $*
+}
+
+
+if [ -z "$1" ]; then
+    echo "Usage `basename $0` command" >&2
+    exit 0
+fi
+
+
+if [ "-h" == "$1" ] || [ "--help" == "$1" ]; then
+    echo "Usage `basename $0` command" >&2
+    echo "  Commands:" >&2
+    echo "    build          - Builds a new deb file. This must be run in a directory with a DEBIAN and file.list"
+    echo "    refresh-repo   - Builds a new package list from all debs under the current working directory."
+    echo "    submit         - Lazy way to copy current version to a target path and update the repo in the target path."
+else
+    command=$1
+    shift
+    $command $*
+fi

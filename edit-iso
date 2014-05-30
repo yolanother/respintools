@@ -1,0 +1,161 @@
+#!/bin/bash
+
+# Absolute path to this script.
+SCRIPT=$(readlink -f $0)
+
+if [ "$(id -u)" != "0" ]; then
+   echo "This script must be run as root" 1>&2
+   exit 1
+fi
+
+function checkPath {
+    if [ -z "$1" ]; then
+        echo "Usage: `basename $0` $command /path/to/wd"
+        return
+    fi
+    cd $1/iso
+}
+
+function closeChroot {
+    checkPath $1
+
+    if [ -d edit ]; then
+        chroot edit /bin/bash -c "aptitude clean"
+
+        if [ -f edit/var/lib/dbus/machine-id ]; then
+            rm edit/var/lib/dbus/machine-id
+        fi
+        if [ -f edit/run/resolvconf/resolv.conf ]; then
+            rm edit/run/resolvconf/resolv.conf
+        fi
+        if [ -d edit/run/resolvconf ]; then
+            rm -r edit/run/resolvconf
+        fi
+        if [ -f edit/sbin/initctl ]; then
+            rm edit/sbin/initctl
+        fi
+
+        chroot edit /bin/bash -c "dpkg-divert --rename --remove /sbin/initctl; umount /proc || umount -lf /proc; umount /sys; umount /dev/pts"
+        umount edit/dev
+        rm /tmp/edit-iso.chstat
+    fi
+}
+
+function clean {
+    checkPath $1
+
+    if [ -d edit ]; then
+        chroot edit /bin/bash -c "aptitude clean; umount /proc || umount -lf /proc; umount /sys; umount /dev/pts"
+        umount edit/dev
+    fi
+    rm -rf $1/iso
+    rm /tmp/edit-iso.wd
+}
+
+function initChroot {
+    if [ ! -f /tmp/edit-iso.chstat ]; then
+        cp $SCRIPT edit/tmp/edit-iso
+        mkdir edit/run/resolvconf
+        cp /run/resolvconf/resolv.conf edit/run/resolvconf/resolv.conf
+        echo continueInit >> edit/tmp/continueInit
+        mount --bind /dev/ edit/dev
+        chroot edit /bin/bash -c "chmod +x /tmp/edit-iso; /tmp/edit-iso; rm /tmp/continueInit"
+        
+        echo "Project has been initialized. Type $0 openChroot to begin making modifications."
+        echo "chrootOpened" > /tmp/edit-iso.chstat
+    fi
+}
+
+function init {
+    set -e
+    if [ -z "$1" ] || [ -z "$2" ] || [ ! -f $2 ]; then
+        echo "Usage: `basename $0` init /path/to/wd /path/to/source.iso"
+        return
+    fi
+
+    iso=$(readlink -f $2)
+
+    mkdir -p $1 2>/dev/null
+
+    cd $1
+    path=`pwd`
+    if [ -d $path/iso ]; then
+        echo "ISO Directory already exists, only run initialize once. If you need to reinitilize do a clean or call reinit" && return
+    fi
+    mkdir iso
+    cd iso
+    echo $path > /tmp/edit-iso.wd
+    mkdir mnt
+    mount -o loop $iso mnt
+    mkdir extract-cd
+    sudo rsync --exclude=/casper/filesystem.squashfs -a mnt/ extract-cd
+    unsquashfs mnt/casper/filesystem.squashfs
+    umount mnt 
+    mv squashfs-root edit
+    
+    initChroot $1
+}
+
+function writeIso {
+    set -e
+    checkPath $1
+
+    chmod +w extract-cd/casper/filesystem.manifest
+    chroot edit dpkg-query -W --showformat='${Package} ${Version}\n' > extract-cd/casper/filesystem.manifest
+    cp extract-cd/casper/filesystem.manifest extract-cd/casper/filesystem.manifest-desktop
+    sed -i '/ubiquity/d' extract-cd/casper/filesystem.manifest-desktop
+    sed -i '/casper/d' extract-cd/casper/filesystem.manifest-desktop
+
+    if [ -f /tmp/edit-iso.chstat ]; then
+        closeChroot $1
+    fi
+    
+    if [ -f extract-cd/casper/filesystem.squashfs ]; then
+        rm extract-cd/casper/filesystem.squashfs
+    fi
+
+    echo "Creating main squashfs filesystem"
+    mksquashfs edit extract-cd/casper/filesystem.squashfs
+    # higher compression
+    # mksquashfs edit extract-cd/casper/filesystem.squashfs -b 1048576
+    # highest compression
+    # mksquashfs edit extract-cd/casper/filesystem.squashfs -comp xz -e edit/boot
+    
+    printf $(sudo du -sx --block-size=1 edit | cut -f1) > extract-cd/casper/filesystem.size
+
+    cd extract-cd
+    rm md5sum.txt
+find -type f -print0 | sudo xargs -0 md5sum | grep -v isolinux/boot.cat | tee md5sum.txt
+
+    mkisofs -D -r -V "$IMAGE_NAME" -cache-inodes -J -l -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -o ../../$2.iso .
+}
+
+function continueInit {
+    mount -t proc none /proc
+    mount -t sysfs none /sys
+    mount -t devpts none /dev/pts
+    export HOME=/root
+    export LC_ALL=C
+}
+
+function openChroot {
+    chroot $1/iso/edit
+}
+
+function reinit {
+    clean $1
+    init $1 $2
+}
+
+if [ -f /tmp/continueInit ]; then
+    continueInit
+fi
+
+if [ -f /tmp/edit-iso.wd ] && [ "$2" != "`cat /tmp/edit-iso.wd`" ]; then
+    wd=`cat /tmp/edit-iso.wd`
+fi
+
+command=$1
+
+shift
+$command $wd $*
