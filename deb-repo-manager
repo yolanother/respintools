@@ -1,0 +1,91 @@
+#!/bin/bash
+
+if [ "configure" == "$1" ]; then
+    if [ ! -f .repoconfig ]; then
+        if [ -n "$2" ]; then
+            path=$2
+        else
+            path=`pwd`
+        fi
+        
+
+        echo "Configure the general settings for your repo build directory:"
+        read -p "  Path to gpg signing keys: " gpg
+        read -p "  Repo server user: " user
+        read -p "  Repo server host: " host
+        read -p "  Repo server path: " hostpath
+        read -p "  Packages directory: " packages
+
+        echo export gpg=$(readlink -f "$gpg") > .repoconfig
+        echo export user=$user >> .repoconfig
+        echo export host=$host >> .repoconfig
+        echo export hostpath=$hostpath >> .repoconfig
+        echo export packages=$(readlink -f "$packages") >> .repconfig
+        echo export path=$path >> .repoconfig
+    fi
+
+    if [ ! -f .repoheader ]; then
+        echo "Configure the header for your repo:"
+        read -p "  Archive: " archive
+        read -p "  Origin: " origin
+        read -p "  Label: " label
+        read -p "  Architecture: " arch
+        echo "Archive: $archive" > .repoheader
+        echo "Origin: $origin" >> .repoheader
+        echo "Label: $label" >> .repoheader
+        echo "Architecture: $arch" >> .repoheader
+        echo "MD5Sum:" >> .repoheader
+    fi
+fi
+
+if [ -f "$1/.repoconfig" ]; then
+    path=$1
+    cd $1
+    shift
+fi
+
+if [ ! -f .repoconfig ] || [ ! -f .repoheader ]; then
+    echo "Please run this in a directory that has been configured. Or type '`basename $0` configure' to configure this directory."
+    exit
+fi
+
+source .repoconfig
+
+echo "[ Repo Manager ]"
+echo "gpg key: $gpg"
+echo "Server user: $user"
+echo "Server host: $host"
+echo "Server path: $hostpath"
+echo "Packages source directory: $packages";
+
+SCRIPT_PATH=`dirname $(readlink -f $0)`
+
+if [ ! -d dist ]; then
+    mkdir dist
+fi
+
+buildall=""
+if [ "$1" == "build-all" ]; then
+    buildall="build-all"
+    shift
+fi
+
+submit=""
+if [ "$1" == "submit" ]; then
+    submit="submit"
+    shift
+fi
+
+if [ -n "$1" ]; then
+    echo $* | xargs -d ' ' -i $SCRIPT_PATH/create-deb build $packages/{}
+fi
+
+if [ -n "$buildall" ]; then
+    ls -c1 $packages | xargs -i $SCRIPT_PATH/create-deb build $packages/{}
+fi
+find $packages -name "*.deb" -exec mv {} $path/dist/ \;
+$SCRIPT_PATH/create-deb refresh-repo $path/.repoheader $path/dist/ $gpg
+
+if [ -n "$submit" ]; then
+    rsync -avz -e ssh $path/dist/ $user@$host:$hostpath
+fi
