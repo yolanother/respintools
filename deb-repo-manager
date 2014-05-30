@@ -44,6 +44,10 @@ if [ -f "$1/.repoconfig" ]; then
     shift
 fi
 
+if [ -z "$path" ]; then
+    path=`pwd`
+fi
+
 if [ ! -f .repoconfig ] || [ ! -f .repoheader ]; then
     echo "Please run this in a directory that has been configured. Or type '`basename $0` configure' to configure this directory."
     exit
@@ -70,6 +74,12 @@ if [ "$1" == "build-all" ]; then
     shift
 fi
 
+index=""
+if [ "$1" == "index" ]; then
+    index="index"
+    shift
+fi
+
 submit=""
 if [ "$1" == "submit" ]; then
     submit="submit"
@@ -83,8 +93,17 @@ fi
 if [ -n "$buildall" ]; then
     ls -c1 $packages | xargs -i $SCRIPT_PATH/create-deb build $packages/{}
 fi
-find $packages -name "*.deb" -exec mv {} $path/dist/ \;
-$SCRIPT_PATH/create-deb refresh-repo $path/.repoheader $path/dist/ $gpg
+
+if [ -n "`find $packages -iname "*.deb" | grep -i deb`" ]; then
+    echo "Discovered new packages: "
+    find $packages -iname "*.deb" -exec echo "  {}" \;
+    find $packages -name "*.deb" -exec mv {} $path/dist/ \;
+    index="index"
+fi
+
+if [ -n "$index" ]; then
+    $SCRIPT_PATH/create-deb refresh-repo $path/.repoheader $path/dist/ $gpg
+fi
 
 if [ -n "$submit" ]; then
     rsync -avz -e ssh $path/dist/ $user@$host:$hostpath
