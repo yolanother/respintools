@@ -102,6 +102,12 @@ if [ -n "`find $packages -iname "*.deb" | grep -i deb`" ]; then
 fi
 
 if [ -n "$index" ]; then
+    if [ -f $path/dist/Release.gpg ]; then
+        pushd $path/dist 2>/dev/null >/dev/null
+        tar cvfz $path/old-index.tar.gz {Packages,Release}*
+        rm {Packages,Release}*
+        popd $path 2>/dev/null >/dev/null
+    fi
     $SCRIPT_PATH/create-deb refresh-repo $path/.repoheader $path/dist/ $gpg
 fi
 
