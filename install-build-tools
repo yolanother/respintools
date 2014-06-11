@@ -1,0 +1,83 @@
+#!/bin/bash
+
+if [ "$(id -u)" != "0" ]; then
+   echo "This script must be run as root" 1>&2
+   exit 0
+fi
+
+set -e
+
+supported=""
+found=""
+
+function install-package {
+    echo -n
+    #apt-get install -y --force-yes $*
+}
+
+function tizen-platform {
+    if [ ! -f /etc/apt/sources.list.d/tizen-platform.list ]; then
+        echo "deb http://download.tizen.org/tools/latest-release/Ubuntu_`lsb_release -r | awk '{print $2}'` /" > /etc/apt/sources.list.d/tizen-platform.list
+        apt-get update
+    fi
+    
+    install-package gbs mic
+    apt-get update && apt-get upgrade -y --force-yes
+}
+
+function add-ubuntumobi {
+    if [ ! -f /etc/apt/sources.list.d/ubuntumobi.list ]; then
+        wget -O - http://ubuntu.doubtech.com/doubtech-debian.pub | apt-key add -
+
+        if [ -z "`grep ubuntu.doubtech.com /etc/apt/sources.list`" ]; then
+            echo "" >> /etc/apt/sources.list.d/ubuntumobi.list
+            echo "# Ubuntu Mobi Sources" >> /etc/apt/sources.list.d/ubuntumobi.list
+            echo "deb http://ubuntu.doubtech.com/dists/ubuntumobi/ /" >> /etc/apt/sources.list.d/ubuntumobi.list
+        fi
+        apt-get update
+    fi
+}
+
+targets=$*
+
+function um-inst {
+    supported="`printf "    %s%30s" "$1" "$2"`
+$supported"
+    if [[ $targets =~ "$1" ]]; then
+        found="$1 $found"
+        echo "Installing $2 dependencies"
+        add-ubuntumobi
+        shift
+        shift
+        install-package $*
+    fi
+}
+
+function um-custom-inst {
+    supported="`printf "    %s%30s" "$1" "$2"`
+$supported"
+    if [[ $targets =~ "$1" ]]; then
+        found="$1 $found"
+        echo "Installing $2 dependencies"
+        $1
+    fi
+}
+
+um-custom-inst "tizen-platform" "Tizen Platform" tizen-platform
+um-inst "android-platform" "Android Platform" ubuntu-mobidev-platform
+um-inst "android" "Android" ubuntu-mobidev
+um-inst "eclipse-adt" "Eclipse ADT" eclipse-adt
+um-inst "android-studio" "Android Studio" android-studio
+um-inst "tizen-sdk" "Tizen SDK" tizen-sdk
+um-inst "tizen-wearable-sdk" "Tizen Wearable SDK" tizen-wearable-sdk
+um-inst "android-wear-emulator" "Android Wear" android-sdk-android-wear-image
+um-inst "android-emulator-arm" "Android Emulator (ARM)" android-sdk-armeabi-v7a
+
+if [ -z "$found" ]; then
+    echo "Usage: `basename $0` [tool list]"
+    echo -n "  Supported:"
+    echo "$supported" | sort
+    exit 1
+fi
+
+exit 0
