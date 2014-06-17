@@ -94,10 +94,10 @@ if [ -n "$buildall" ]; then
     ls -c1 $packages | xargs -i $SCRIPT_PATH/create-deb build $packages/{}
 fi
 
-if [ -n "`find $packages -iname "*.deb" | grep -i deb`" ]; then
+if [ -n "`find $packages -iname "*.deb" -not -path "$path/dist/*" | grep -i deb`" ]; then
     echo "Discovered new packages: "
-    find $packages -iname "*.deb" -exec echo "  {}" \;
-    find $packages -name "*.deb" -exec mv {} $path/dist/ \;
+    find $packages -iname "*.deb" -not -path "$path/dist/*" -exec echo "  {}" \;
+    find $packages -name "*.deb" -not -path "$path/dist/*" -exec mv {} $path/dist/ \;
     index="index"
 fi
 
