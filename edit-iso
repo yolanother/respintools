@@ -3,6 +3,12 @@
 # Absolute path to this script.
 SCRIPT=$(readlink -f $0)
 
+if [ "$(id -u)" != "0" ]; then
+   echo "This script must be run as root" 1>&2
+   sudo $SCRIPT $*
+   exit $?
+fi
+
 if [ "--help" == "$1" ] || [ "-h" == "$1" ] || [ "-help" == "$1" ]; then
     echo "Usage: `basename $0` $command ..."
     echo "  Commands:"
@@ -14,10 +20,6 @@ if [ "--help" == "$1" ] || [ "-h" == "$1" ] || [ "-help" == "$1" ]; then
     exit 1
 fi
 
-if [ "$(id -u)" != "0" ]; then
-   echo "This script must be run as root" 1>&2
-   exit 1
-fi
 
 function checkPath {
     if [ -z "$1" ]; then
