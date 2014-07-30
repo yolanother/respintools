@@ -13,10 +13,11 @@ if [ "--help" == "$1" ] || [ "-h" == "$1" ] || [ "-help" == "$1" ]; then
     echo "Usage: `basename $0` $command ..."
     echo "  Commands:"
     echo "    checkpath"
-    echo "    init"
+    echo "    init /path/to/working/dir /path/to/source.iso"
     echo "    initChroot"
     echo "    closeChroot"
     echo "    clean"
+    echo "    writeIso /path/to/working/dir name-of-target-iso"
     exit 1
 fi
 

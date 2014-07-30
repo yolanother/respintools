@@ -55,6 +55,8 @@ fi
 
 source .repoconfig
 
+gpg="`readlink -f "$gpg"`"
+
 echo "[ Repo Manager ]"
 echo "gpg key: $gpg"
 echo "Server user: $user"
@@ -86,20 +88,24 @@ if [ "$1" == "submit" ]; then
     shift
 fi
 
-if [ -n "$1" ]; then
-    echo $* | xargs -d ' ' -i $SCRIPT_PATH/create-deb build $packages/{}
-fi
+for pkgs in $(echo "$packages" | tr ":" "\n")
+do
+    pkgs="`readlink -f "$pkgs"`"
+    if [ -n "$1" ]; then
+        echo $* | xargs -d ' ' -i $SCRIPT_PATH/create-deb build $pkgs/{}
+    fi
 
-if [ -n "$buildall" ]; then
-    ls -c1 $packages | xargs -i $SCRIPT_PATH/create-deb build $packages/{}
-fi
+    if [ -n "$buildall" ]; then
+        ls -c1 $pkgs | xargs -i $SCRIPT_PATH/create-deb build $pkgs/{}
+    fi
 
-if [ -n "`find $packages -iname "*.deb" -not -path "$path/dist/*" | grep -i deb`" ]; then
-    echo "Discovered new packages: "
-    find $packages -iname "*.deb" -not -path "$path/dist/*" -exec echo "  {}" \;
-    find $packages -name "*.deb" -not -path "$path/dist/*" -exec mv {} $path/dist/ \;
-    index="index"
-fi
+    if [ -n "`find $pkgs -iname "*.deb" -not -path "$path/dist/*" | grep -i deb`" ]; then
+        echo "Discovered new packages: "
+        find $pkgs -iname "*.deb" -not -path "$path/dist/*" -exec echo "  {}" \;
+        find $pkgs -name "*.deb" -not -path "$path/dist/*" -exec mv {} $path/dist/ \;
+        index="index"
+    fi
+done
 
 if [ -n "$index" ]; then
     if [ -f $path/dist/Release.gpg ]; then
