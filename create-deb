@@ -1,7 +1,11 @@
 #!/bin/bash
-
+echo "$*"
 function build {
     if [ -n "$1" ]; then
+        if [ ! -d "$1" ]; then
+            echo "Could not switch to package: $1"
+            exit 0
+        fi
         cd $1
     fi
 
@@ -54,6 +58,9 @@ function build {
     echo "done."
 
     if [ -f "exclude.list" ]; then
+        echo -n "  removing excluded symlinks..."
+        cat exclude.list | xargs -i sh -c "if [ -L $wd/{} ]; then unlink $wd/{}; fi"
+        echo "done."
         echo -n "  removing excluded files..."
         cat exclude.list | xargs -i rm -rf $wd/{}
         echo "done."
